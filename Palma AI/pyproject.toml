@@ -15,6 +15,9 @@ dependencies = [
 	"langchain-text-splitters>=1.1.0",
 	"fastapi",
 	"uvicorn[standard]",
+	"langchain-community>=0.4.1",
+	"llama-cpp-python>=0.3.16",
+	"langchain-ollama>=1.0.1",
 ]
 
 [dependency-groups]

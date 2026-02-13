@@ -2,9 +2,10 @@ import asyncio
 import os
 import hashlib
 import httpx
+import logging
 from typing import TypedDict, List, Dict, NotRequired
 
-# cspell:ignore tavily ainvoke
+# cspell ignore tavily ainvoke
 
 from langgraph.graph import StateGraph
 from langchain_text_splitters import RecursiveCharacterTextSplitter
@@ -12,23 +13,27 @@ from langchain_core.documents import Document
 from langchain_openai import OpenAIEmbeddings
 from langchain_pinecone import PineconeVectorStore
 from langchain_tavily import TavilyCrawl as SearchCrawler
-# Pinecone client compatibility (v8 and v7)
+
 try:
-    from pinecone import Pinecone as PineconeClient  # v8 client
+    from pinecone import Pinecone as PineconeClient
 except Exception:
     PineconeClient = None
-    import pinecone as pinecone_v7  # v7 client
+    import pinecone as pinecone_v7
+
 from dotenv import load_dotenv
 
-# Load environment variables from .env if present
-load_dotenv()
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s %(name)s %(message)s",
+)
 
-# ----- helpers --------------------------------------------------------------
+logger = logging.getLogger(__name__)
+
+load_dotenv()
 
 
 async def chunk_id(doc: Document, index: int) -> str:
-    url = doc.metadata["source"]
-    return f"{url}::chunk-{index}"
+    return f"{doc.metadata['source']}::chunk-{index}"
 
 
 async def checksum(text: str) -> str:
@@ -47,6 +52,15 @@ async def compute_delta(
     previous: Dict[str, Dict],
     current_chunks: List[Document],
 ) -> Dict[str, List[Document]]:
+
+    logger.info(
+        "Computing delta",
+        extra={
+            "previous_count": len(previous),
+            "current_count": len(current_chunks),
+        },
+    )
+
     current_map = {}
     for idx, doc in enumerate(current_chunks):
         chunk = doc.copy()
@@ -66,6 +80,15 @@ async def compute_delta(
         if current_map[cid].metadata["checksum"] != previous[cid]["checksum"]
     ]
 
+    logger.info(
+        "Delta computed",
+        extra={
+            "new": len(new_ids),
+            "changed": len(changed_ids),
+            "removed": len(removed_ids),
+        },
+    )
+
     return {
         "new": [current_map[cid] for cid in new_ids],
         "changed": [current_map[cid] for cid in changed_ids],
@@ -74,15 +97,18 @@ async def compute_delta(
 
 
 async def fetch_previous_signatures(pinecone_index, namespace: str) -> Dict[str, Dict]:
+    logger.info("Fetching previous signatures", extra={"namespace": namespace})
+
     results = await asyncio.to_thread(
         lambda: pinecone_index.query(
-            vector=[0.0],  # dummy vector because we only need metadata
+            vector=[0.0],
             top_k=1,
             include_values=False,
             include_metadata=True,
             filter={"namespace": {"$eq": namespace}},
         )
     )
+
     signatures = {}
     for match in results.get("matches", []):
         meta = match["metadata"]
@@ -90,14 +116,32 @@ async def fetch_previous_signatures(pinecone_index, namespace: str) -> Dict[str,
             "checksum": meta["checksum"],
             "vector_id": match["id"],
         }
+
+    logger.info(
+        "Previous signatures fetched",
+        extra={"count": len(signatures)},
+    )
+
     return signatures
 
 
 async def crawl_with_search_api(
-    url: str, *, max_depth: int = 5, extract_depth: str = "advanced", headers: Dict[str, str] | None = None
+    url: str,
+    *,
+    max_depth: int = 5,
+    extract_depth: str = "advanced",
+    headers: Dict[str, str] | None = None,
 ) -> List[Document]:
 
-    # Otherwise use Tavily crawler service
+    logger.info(
+        "Crawl started",
+        extra={
+            "url": url,
+            "max_depth": max_depth,
+            "extract_depth": extract_depth,
+        },
+    )
+
     crawl_tool = SearchCrawler()
     response = await asyncio.to_thread(
         crawl_tool.invoke,
@@ -108,7 +152,6 @@ async def crawl_with_search_api(
         },
     )
 
-    # Normalize various possible response shapes from the crawl tool
     items = []
     if isinstance(response, dict):
         items = (
@@ -120,10 +163,7 @@ async def crawl_with_search_api(
     elif isinstance(response, list):
         items = response
     elif isinstance(response, str):
-        # Treat raw string as a single document
         items = [{"raw_content": response, "url": url}]
-    else:
-        items = []
 
     documents: List[Document] = []
     for item in items:
@@ -132,11 +172,13 @@ async def crawl_with_search_api(
             src = url
         elif isinstance(item, dict):
             content = (
-                item.get("raw_content") or item.get("content") or item.get("text") or ""
+                item.get("raw_content")
+                or item.get("content")
+                or item.get("text")
+                or ""
             )
             src = item.get("url", url)
         else:
-            # Unsupported item type
             continue
 
         if not content:
@@ -148,6 +190,11 @@ async def crawl_with_search_api(
                 metadata={"source": src},
             )
         )
+
+    logger.info(
+        "Crawl completed",
+        extra={"documents": len(documents)},
+    )
 
     return documents
 
@@ -166,8 +213,21 @@ async def batched(iterable, size=50):
 
 
 async def apply_delta(
-    vector_store: PineconeVectorStore, delta: Dict, namespace: str, batch_size: int = 50
+    vector_store: PineconeVectorStore,
+    delta: Dict,
+    namespace: str,
+    batch_size: int = 50,
 ):
+    logger.info(
+        "Applying delta",
+        extra={
+            "namespace": namespace,
+            "new": len(delta["new"]),
+            "changed": len(delta["changed"]),
+            "removed": len(delta["removed"]),
+        },
+    )
+
     new_batches = await batched(delta["new"], batch_size)
     for docs in new_batches:
         await asyncio.to_thread(
@@ -186,8 +246,7 @@ async def apply_delta(
             lambda ids=ids: vector_store.delete(ids=ids, namespace=namespace)
         )
 
-
-# ----- langgraph state ------------------------------------------------------
+    logger.info("Delta applied", extra={"namespace": namespace})
 
 
 class CrawlState(TypedDict):
@@ -203,42 +262,66 @@ graph = StateGraph(CrawlState)
 
 
 async def crawl(state: CrawlState) -> CrawlState:
+    logger.info("Graph crawl node entered", extra={"url": state["url"]})
+
     docs = await crawl_with_search_api(
         state["url"],
         max_depth=state.get("max_depth", 5),
-        extract_depth=state.get("extract_depth", "advanced")
+        extract_depth=state.get("extract_depth", "advanced"),
     )
     return {**state, "raw_docs": docs}
 
 
 async def split(state: CrawlState) -> CrawlState:
+    logger.info(
+        "Splitting documents",
+        extra={"raw_docs": len(state["raw_docs"])},
+    )
+
     splitter = RecursiveCharacterTextSplitter(chunk_size=800, chunk_overlap=120)
     chunks = await asyncio.to_thread(splitter.split_documents, state["raw_docs"])
+
     for idx, chunk in enumerate(chunks):
         chunk.metadata.update(await build_metadata(chunk, idx))
+
+    logger.info(
+        "Split completed",
+        extra={"chunks": len(chunks)},
+    )
+
     return {**state, "chunks": chunks}
 
 
 async def diff(state: CrawlState) -> CrawlState:
     namespace = state["url"]
+    logger.info("Diff node started", extra={"namespace": namespace})
+
     if PineconeClient is not None:
-        pinecone_client = PineconeClient(api_key=os.environ["PINECONE_API_KEY"])  # v8
+        pinecone_client = PineconeClient(api_key=os.environ["PINECONE_API_KEY"])
         index = pinecone_client.Index(os.environ["PINECONE_INDEX"])
     else:
-        pinecone_v7.init(api_key=os.environ["PINECONE_API_KEY"])  # v7
+        pinecone_v7.init(api_key=os.environ["PINECONE_API_KEY"])
         index = pinecone_v7.Index(os.environ["PINECONE_INDEX"])
+
     previous = await fetch_previous_signatures(index, namespace)
     delta = await compute_delta(previous, state["chunks"])
+
     return {**state, "delta": delta}
 
 
 async def persist(state: CrawlState) -> CrawlState:
+    logger.info("Persist node started", extra={"namespace": state["url"]})
+
     vector_store = PineconeVectorStore.from_existing_index(
         index_name=os.environ["PINECONE_INDEX"],
         embedding=OpenAIEmbeddings(model="text-embedding-3-small"),
         namespace=state["url"],
     )
+
     await apply_delta(vector_store, state["delta"], namespace=state["url"])
+
+    logger.info("Persist completed", extra={"namespace": state["url"]})
+
     return state
 
 
@@ -262,6 +345,18 @@ async def run_pipeline(
     extract_depth: str = "advanced",
     headers: Dict[str, str] | None = None,
 ):
-    await app.ainvoke(
-        {"url": url, "max_depth": max_depth, "extract_depth": extract_depth}
+    logger.info(
+        "Pipeline started",
+        extra={
+            "url": url,
+            "max_depth": max_depth,
+            "extract_depth": extract_depth,
+        },
     )
+
+    await app.ainvoke(
+            {"url": url, "max_depth": max_depth, "extract_depth": extract_depth}
+        )
+    
+    logger.info("Pipeline completed", extra={"url": url})
+
