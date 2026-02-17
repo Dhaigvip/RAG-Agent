@@ -16,8 +16,7 @@ dependencies = [
 	"fastapi",
 	"uvicorn[standard]",
 	"langchain-community>=0.4.1",
-	"llama-cpp-python>=0.3.16",
-	"langchain-ollama>=1.0.1",
+	"unicorn",
 ]
 
 [dependency-groups]

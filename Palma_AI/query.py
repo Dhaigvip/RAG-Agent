@@ -17,7 +17,7 @@ from langchain_openai import OpenAIEmbeddings, ChatOpenAI
 from langchain_pinecone import PineconeVectorStore
 from dotenv import load_dotenv
 
-from langchain_ollama import ChatOllama
+# from langchain_ollama import ChatOllama
 
 
 logging.basicConfig(
