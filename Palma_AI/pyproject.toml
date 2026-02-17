@@ -16,7 +16,7 @@ dependencies = [
 	"fastapi",
 	"uvicorn[standard]",
 	"langchain-community>=0.4.1",
-	"unicorn",
+	"gunicorn",
 ]
 
 [dependency-groups]
