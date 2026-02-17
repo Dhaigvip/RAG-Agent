@@ -1,3 +1,23 @@
+# Palma AI Client
+
+This project is a React + Vite client for the Palma Help Agent.
+
+## Deployment
+
+For production deployment guidance (env setup, build, Nginx proxy, HTTPS), see [CLIENT_DEPLOYMENT.md](CLIENT_DEPLOYMENT.md).
+
+Quick build:
+
+```powershell
+npm install
+npm run build
+npm run preview
+```
+
+Key configuration: set `VITE_API_BASE_URL` (e.g., `/api`) in `.env.production`. The API client reads it in [src/api/client.ts](src/api/client.ts).
+
+---
+
 # React + TypeScript + Vite
 
 This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.

@@ -39,6 +39,7 @@ export default function Chat() {
             localStorage.setItem("session_id", data.session_id);
 
             setMessages((prev) => [...prev, { role: "assistant", content: data.answer, sources: data.sources }]);
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
         } catch (err) {
             setMessages((prev) => [
                 ...prev,

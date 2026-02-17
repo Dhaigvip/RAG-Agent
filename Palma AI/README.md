@@ -12,4 +12,4 @@ Expose on your network
 uv run uvicorn server:app --host 0.0.0.0 --port 8000 --reload
 
 .\.venv\Scripts\Activate.ps1
-uv run uvicorn server:app --host 127.0.0.1 --port 8000 --reload --log-level debug
+& .\.venv\Scripts\python.exe -m uvicorn server:app --host 127.0.0.1 --port 8000 --reload --log-level debug
