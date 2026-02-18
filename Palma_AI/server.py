@@ -113,6 +113,15 @@ async def crawl_and_index(req: CrawlRequest) -> dict:
 
 @app.post("/chat", response_model=ChatResponse)
 async def chat(req: ChatRequest):
+    # Ensure required environment variables are present before proceeding
+    required_env = ["OPENAI_API_KEY", "PINECONE_API_KEY", "PINECONE_INDEX"]
+    missing = [k for k in required_env if not os.getenv(k)]
+    if missing:
+        logger.error("Missing environment configuration", extra={"missing": missing})
+        raise HTTPException(
+            status_code=500,
+            detail=f"Missing environment configuration: {', '.join(missing)}",
+        )
     session_id = req.session_id or str(uuid4())
 
     logger.info(
@@ -179,11 +188,16 @@ async def ui_query_proxy(request: Request):
     configurable = body.get("configurable", {})
 
     query = input_state.get("query")
+    namespace = input_state.get("namespace")
     thread_id = configurable.get("thread_id")
 
     if not query:
         logger.warning("UI query missing query field")
         raise HTTPException(status_code=400, detail="Missing query")
+
+    if not namespace:
+        logger.warning("UI query missing namespace field")
+        raise HTTPException(status_code=400, detail="Missing namespace")
 
     logger.info(
         "UI query forwarded to chat",
@@ -193,6 +207,7 @@ async def ui_query_proxy(request: Request):
     result = await query_app.ainvoke(
         {
             "query": query,
+            "namespace": namespace,
             "messages": [],
             "retrieved_docs": [],
             "context": "",

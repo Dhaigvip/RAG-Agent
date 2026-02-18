@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html>
+<body>
+<h2>Case Worker Agent</h2>
+
+<input id="msg" style="width:400px" value="My payment failed but money got deducted"/>
+<button onclick="send()">Send</button>
+
+<pre id="log"></pre>
+
+<script>
+let ws = new WebSocket("ws://localhost:8000/ws/support");
+
+ws.onmessage = (event) => {
+    const data = JSON.parse(event.data);
+    document.getElementById("log").textContent += "\n" + JSON.stringify(data, null, 2);
+
+    if(data.type === "awaiting_human"){
+        setTimeout(()=>{
+            ws.send(JSON.stringify({
+                approved: true,
+                feedback: "Please share transaction id. Refund processed within 24 hours."
+            }));
+        },1000);
+    }
+};
+
+function send(){
+    ws.send(JSON.stringify({
+        message: document.getElementById("msg").value
+    }));
+}
+</script>
+</body>
+</html>

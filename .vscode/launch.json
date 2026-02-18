@@ -1,0 +1,27 @@
+{
+    "$schema": "https://raw.githubusercontent.com/microsoft/vscode-python/main/pythonFiles/vscode_pyqt_default_launch.json",
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "FastAPI: Uvicorn (Debug)",
+            "type": "python",
+            "request": "launch",
+            "module": "uvicorn",
+            "args": ["server:app", "--host", "127.0.0.1", "--port", "8000"],
+            "cwd": "${workspaceFolder}",
+            "envFile": "${workspaceFolder}/.env",
+            "justMyCode": true
+        },
+        {
+            "name": "FastAPI: Uvicorn (Debug + Reload)",
+            "type": "python",
+            "request": "launch",
+            "module": "uvicorn",
+            "args": ["server:app", "--host", "127.0.0.1", "--port", "8000", "--reload"],
+            "cwd": "${workspaceFolder}",
+            "envFile": "${workspaceFolder}/.env",
+            "subProcess": true,
+            "justMyCode": true
+        }
+    ]
+}

@@ -4,10 +4,6 @@ import { mockChatResponse } from "./mockResponse";
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "";
 const USE_MOCK = import.meta.env.VITE_USE_CHAT_MOCK === "true";
-
-if (!API_BASE_URL) {
-    throw new Error("VITE_API_BASE_URL is not defined");
-}
 type Source = {
     source: string;
     chunk_id: string;
@@ -30,6 +26,10 @@ export async function sendChatMessage(query: string, sessionId: string | null): 
         };
     }
 
+    if (!API_BASE_URL) {
+        throw new Error("VITE_API_BASE_URL is not defined");
+    }
+
     const res = await fetch(`${API_BASE_URL}/chat`, {
         method: "POST",
         headers: {
@@ -44,7 +44,7 @@ export async function sendChatMessage(query: string, sessionId: string | null): 
 
     if (!res.ok) {
         const text = await res.text();
-        throw new Error(`Chat API error: ${text}`);
+        throw new Error(`Chat API error ${res.status}: ${text}`);
     }
 
     return res.json();
